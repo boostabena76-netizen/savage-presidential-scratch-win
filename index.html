@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Savage Presidential - Scratch & Win</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; font-family:Arial,Helvetica,sans-serif;
+    background:linear-gradient(135deg,#0b0b0b,#252525);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .app{
+    width:100%; max-width:430px; text-align:center;
+  }
+  .brand{
+    font-size:30px; font-weight:900; letter-spacing:1px;
+    text-transform:uppercase; margin-bottom:6px;
+  }
+  .subtitle{color:#d0d0d0; margin-bottom:22px}
+  .card{
+    background:#fff; color:#111; border-radius:22px; padding:18px;
+    box-shadow:0 18px 45px rgba(0,0,0,.45);
+  }
+  .scratch-wrap{
+    position:relative; width:100%; aspect-ratio:1.65;
+    border-radius:16px; overflow:hidden; background:#f4f4f4;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  .prize{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    background:linear-gradient(135deg,#fff4b0,#ffd43b);
+  }
+  .prize small{font-weight:700; text-transform:uppercase; letter-spacing:1px}
+  .prize strong{font-size:36px; margin-top:8px}
+  #scratchCanvas{position:absolute; inset:0; width:100%; height:100%; touch-action:none}
+  .hint{font-size:13px;color:#666;margin:12px 0 2px}
+  button{
+    width:100%; border:0; border-radius:12px; padding:14px 16px;
+    background:#111;color:#fff;font-size:16px;font-weight:800; cursor:pointer;
+    margin-top:14px;
+  }
+  button:active{transform:scale(.99)}
+  .status{min-height:24px;margin-top:10px;font-weight:700}
+  .note{font-size:12px;color:#aaa;margin-top:16px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="brand">Savage Presidential</div>
+  <div class="subtitle">Scratch & Win 🎁</div>
+
+  <div class="card">
+    <div class="scratch-wrap" id="scratchWrap">
+      <div class="prize">
+        <small>Your prize is</small>
+        <strong id="prizeText">₦500</strong>
+      </div>
+      <canvas id="scratchCanvas"></canvas>
+    </div>
+    <div class="hint">Scratch the silver area with your finger to reveal your prize.</div>
+    <div class="status" id="status"></div>
+    <button id="newCard">Get New Card</button>
+  </div>
+
+  <div class="note">Cash prizes are recorded server-side. Create an account and log in before playing. Withdrawals are reviewed by the admin.</div>
+</div>
+
+<script>
+(()=>{
+const canvas=document.getElementById('scratchCanvas'),wrap=document.getElementById('scratchWrap'),ctx=canvas.getContext('2d');
+const prizeText=document.getElementById('prizeText'),status=document.getElementById('status'),newCard=document.getElementById('newCard');
+let scratching=false,revealed=false,lastPoint=null,cardId=null;
+function resizeCanvas(){const r=wrap.getBoundingClientRect(),d=Math.max(1,devicePixelRatio||1);canvas.width=Math.round(r.width*d);canvas.height=Math.round(r.height*d);canvas.style.width=r.width+'px';canvas.style.height=r.height+'px';ctx.setTransform(d,0,0,d,0,0);drawCover(r.width,r.height)}
+function drawCover(w,h){ctx.globalCompositeOperation='source-over';const g=ctx.createLinearGradient(0,0,w,h);g.addColorStop(0,'#bcbcbc');g.addColorStop(.5,'#f1f1f1');g.addColorStop(1,'#999');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);ctx.fillStyle='#555';ctx.font='900 28px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('SCRATCH HERE',w/2,h/2)}
+function point(e){const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top}}
+function scratchAt(p){ctx.save();ctx.globalCompositeOperation='destination-out';ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=34;ctx.beginPath();if(lastPoint){ctx.moveTo(lastPoint.x,lastPoint.y);ctx.lineTo(p.x,p.y)}else ctx.arc(p.x,p.y,17,0,Math.PI*2);ctx.stroke();ctx.fill();ctx.restore();lastPoint=p;checkReveal()}
+function checkReveal(){if(revealed)return;const d=Math.max(1,devicePixelRatio||1),data=ctx.getImageData(0,0,canvas.width,canvas.height).data;let t=0;for(let i=3;i<data.length;i+=4)if(data[i]<40)t++;if(t/(canvas.width*canvas.height/4)>.52)reveal()}
+async function reveal(){if(revealed)return;revealed=true;try{const r=await fetch('/api/game/reveal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cardId})});const j=await r.json();if(!r.ok)throw new Error(j.error);prizeText.textContent=j.amount==='₦0'?(j.prize):j.amount;status.textContent=j.amount==='₦0'?'Good luck next time!':'🎉 Congratulations! Your cash prize was added to your wallet.';ctx.clearRect(0,0,wrap.clientWidth,wrap.clientHeight)}catch(e){status.textContent=e.message;revealed=false}}
+async function newGame(){status.textContent='';prizeText.textContent='???';revealed=false;lastPoint=null;const r=await fetch('/api/game/card',{method:'POST'});const j=await r.json();if(!r.ok){status.textContent=j.error||'Please log in first.';newCard.disabled=true;return}cardId=j.cardId;newCard.disabled=false;resizeCanvas()}
+function start(e){if(revealed||!cardId)return;e.preventDefault();scratching=true;lastPoint=null;scratchAt(point(e))}function move(e){if(!scratching||revealed)return;e.preventDefault();scratchAt(point(e))}function end(){scratching=false;lastPoint=null}
+canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',move);window.addEventListener('mouseup',end);canvas.addEventListener('touchstart',start,{passive:false});canvas.addEventListener('touchmove',move,{passive:false});canvas.addEventListener('touchend',end);newCard.addEventListener('click',newGame);window.addEventListener('resize',resizeCanvas);newGame();
+})();
+</script>
+</body>
+</html>
